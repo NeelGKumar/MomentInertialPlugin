@@ -32,42 +32,71 @@ namespace MomentInertialPlugin
 
         protected override Result RunCommand(RhinoDoc doc, RunMode mode)
         {
-            // TODO: start here modifying the behaviour of your command.
-            // ---
-            RhinoApp.WriteLine("The {0} command will add a line right now.", EnglishName);
+            //select the cross-section faces
+            var gc = new Rhino.Input.Custom.GetObject();
+            gc.SetCommandPrompt("Select the surfaces which form the cross-section of the beam.");
+            gc.GeometryFilter = Rhino.DocObjects.ObjectType.Surface;
+            gc.EnablePreSelect(false, true);
+            gc.GetMultiple(1, 1);
+            if (gc.CommandResult() != Rhino.Commands.Result.Success)
+                return gc.CommandResult();
 
-            Point3d pt0;
-            using (GetPoint getPointAction = new GetPoint())
+            var face = gc.Object(0).Face();
+
+            //for each cross-section, get the base-surface curve
+            var gv = new Rhino.Input.Custom.GetObject();
+            gv.SetCommandPrompt("Select the base_curve.");
+            gv.GeometryFilter = Rhino.DocObjects.ObjectType.Curve;
+            gv.EnablePreSelect(false, true);
+            gv.GetMultiple(1, 1);
+            if (gv.CommandResult() != Rhino.Commands.Result.Success)
+                return gv.CommandResult();
+
+            var base_curve = gv.Object(0).Curve();
+            
+
+            for (int i = 0; i < 10; i++)
             {
-                getPointAction.SetCommandPrompt("Please select the start point");
-                if (getPointAction.Get() != GetResult.Point)
+
+                //offset the base to form a closed loop
+                var curves = base_curve.OffsetOnSurface(face, 0.1, doc.ModelAbsoluteTolerance);
+                if (curves.Length > 1)
                 {
-                    RhinoApp.WriteLine("No start point was selected.");
-                    return getPointAction.CommandResult();
+                    Rhino.RhinoApp.WriteLine("More than one offset");
+                    return Result.Failure;
                 }
-                pt0 = getPointAction.Point();
-            }
+                var offset_curve = curves[0];
 
-            Point3d pt1;
-            using (GetPoint getPointAction = new GetPoint())
-            {
-                getPointAction.SetCommandPrompt("Please select the end point");
-                getPointAction.SetBasePoint(pt0, true);
-                getPointAction.DynamicDraw +=
-                  (sender, e) => e.Display.DrawLine(pt0, e.CurrentPoint, System.Drawing.Color.DarkRed);
-                if (getPointAction.Get() != GetResult.Point)
+                //connect the curves in a closed loop
+                LineCurve edge1 = new LineCurve(base_curve.PointAtStart, offset_curve.PointAtStart);
+                LineCurve edge2 = new LineCurve(offset_curve.PointAtEnd, base_curve.PointAtEnd);
+                List<Curve> prejoin = new List<Curve>();
+                prejoin.Add(edge1);
+                prejoin.Add(edge2);
+                prejoin.Add(base_curve);
+                prejoin.Add(offset_curve);
+
+                var loops = Curve.JoinCurves(prejoin, doc.ModelAbsoluteTolerance);
+
+                if (loops.Length > 1)
                 {
-                    RhinoApp.WriteLine("No end point was selected.");
-                    return getPointAction.CommandResult();
+                    Rhino.RhinoApp.WriteLine("More than one joined loops");
+                    return Result.Failure;
                 }
-                pt1 = getPointAction.Point();
+                var loop = loops[0];
+                var breps = Rhino.Geometry.Brep.CreatePlanarBreps(loop);
+
+                if (breps.Length > 1)
+                {
+                    Rhino.RhinoApp.WriteLine("More than one joined loops");
+                    return Result.Failure;
+                }
+
+                doc.Objects.AddBrep(breps[0]);
+                doc.Views.Redraw();
+
+                base_curve = offset_curve;
             }
-
-            doc.Objects.AddLine(pt0, pt1);
-            doc.Views.Redraw();
-            RhinoApp.WriteLine("The {0} command added one line to the document.", EnglishName);
-
-            // ---
 
             return Result.Success;
         }

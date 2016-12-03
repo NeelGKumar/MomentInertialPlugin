@@ -53,8 +53,9 @@ namespace MomentInertialPlugin
                 return gv.CommandResult();
 
             var base_curve = gv.Object(0).Curve();
-            
 
+            //List of all the sub section
+            List<Brep> sub_sections = new List<Brep>();
             for (int i = 0; i < 10; i++)
             {
 
@@ -92,11 +93,30 @@ namespace MomentInertialPlugin
                     return Result.Failure;
                 }
 
+                sub_sections.Add(breps[0]);
+
                 doc.Objects.AddBrep(breps[0]);
                 doc.Views.Redraw();
 
                 base_curve = offset_curve;
             }
+
+            //compute moment of inertia
+            var area_properties1 = Rhino.Geometry.AreaMassProperties.Compute(sub_sections);
+            var area_properties2 = Rhino.Geometry.AreaMassProperties.Compute(face);
+
+            //check for the difference
+            Rhino.RhinoApp.WriteLine("Area {0}", area_properties1.Area);
+            Rhino.RhinoApp.WriteLine("Difference in Area {0}", area_properties1.Area - area_properties2.Area);
+
+            Rhino.RhinoApp.WriteLine("Moment X: {0}; Y: {1}; Z: {2} in WCS ", area_properties1.WorldCoordinatesMomentsOfInertia.X, area_properties1.WorldCoordinatesMomentsOfInertia.Y, area_properties1.WorldCoordinatesMomentsOfInertia.Z);
+            Rhino.RhinoApp.WriteLine("Difference in Moment X: {0}; Y: {1}; Z: {2} in WCS", area_properties1.WorldCoordinatesMomentsOfInertia.X - area_properties2.WorldCoordinatesMomentsOfInertia.X,                 area_properties1.WorldCoordinatesMomentsOfInertia.Y - area_properties2.WorldCoordinatesMomentsOfInertia.Y, area_properties1.WorldCoordinatesMomentsOfInertia.Z - area_properties2.WorldCoordinatesMomentsOfInertia.Z);
+
+            //display the centroids
+            doc.Objects.AddPoint(area_properties1.Centroid);
+            doc.Objects.AddPoint(area_properties2.Centroid);
+
+            doc.Views.Redraw();
 
             return Result.Success;
         }
